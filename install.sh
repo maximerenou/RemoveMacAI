@@ -18,6 +18,8 @@ set -euo pipefail
 self="curl -fsSL https://raw.githubusercontent.com/omlahore/RemoveMacAI/main/install.sh | bash"
 base="${REMOVEMACAI_URL:-https://github.com/omlahore/RemoveMacAI/releases/latest/download}"
 asset="removemacai-darwin-arm64.tar.gz"
+# The repository whose release workflow must have built the download.
+repo="${REMOVEMACAI_REPO:-omlahore/RemoveMacAI}"
 
 if [ "$(uname -s)" != "Darwin" ]; then
   echo "RemoveMacAI is for macOS." >&2
@@ -40,6 +42,25 @@ fetch() {
   if [ "$expected" != "$actual" ]; then
     echo "The download does not match its checksum, so it was not used." >&2
     exit 1
+  fi
+  verify_provenance "$tmp/$1"
+}
+
+# The checksum comes from the same release as the file, so it only catches a
+# damaged download. The build attestation proves the file was built from the
+# repository's workflow. It is checked when the GitHub CLI is installed, and
+# required when REMOVEMACAI_VERIFY=1.
+verify_provenance() {
+  if command -v gh >/dev/null 2>&1; then
+    if ! gh attestation verify "$1" --repo "$repo" >/dev/null 2>&1; then
+      echo "The download has no valid build attestation from $repo, so it was not used. (gh needs to be signed in: gh auth login)" >&2
+      exit 1
+    fi
+  elif [ "${REMOVEMACAI_VERIFY:-0}" = "1" ]; then
+    echo "REMOVEMACAI_VERIFY=1 needs the GitHub CLI (gh) to check the build attestation." >&2
+    exit 1
+  else
+    echo "Note: install the GitHub CLI (gh) to also verify the build attestation." >&2
   fi
 }
 
